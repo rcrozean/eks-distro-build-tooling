@@ -8,3 +8,5 @@ run-buildkit-and-registry:
 stop-buildkit-and-registry:
 	docker rm -v --force buildkitd
 	docker rm -v --force registry
+
+.PHONY: test

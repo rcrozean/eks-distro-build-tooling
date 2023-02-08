@@ -2,7 +2,7 @@ REPO?="https://github.com/gomods/athens.git"
 GIT_TAG?=$(shell cat GIT_TAG)
 CHART_VERSION?=$(shell cat CHART_VERSION)
 CHART_ROOT?= $(shell git rev-parse --show-toplevel)/projects/gomods/athens
-CHART_BUCKET?="prowdataclusterstack-316-prowchartsbucket2e50b8d9-8b0f36hrcee8"
+CHART_BUCKET?="prow-data-devstack-prowchartsbucket2e50b8d9-cx2cst36nww3"
 AWS_ACCOUNT_ID?=$(shell aws sts get-caller-identity --query Account --output text)
 AWS_REGION?=us-west-2
 

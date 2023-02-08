@@ -28,6 +28,8 @@ source $SCRIPT_ROOT/lib.sh
 
 mkdir -p "${BUILD_DIR}"
 
+sleep 600
+
 if [ -e "${CHARTS_DIR}/Chart.yaml" ]
 then
 	helm package "${CHARTS_DIR}/" --destination "${BUILD_DIR}/stable"

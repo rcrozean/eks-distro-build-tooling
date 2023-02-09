@@ -39,3 +39,4 @@ release: install-toolchain clone publish
 .PHONY: clean
 clean:
 	rm -rf $(GRAFANA_CHART_REPO)
+

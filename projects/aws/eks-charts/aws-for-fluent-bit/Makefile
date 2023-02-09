@@ -39,3 +39,4 @@ release: install-toolchain clone publish
 .PHONY: clean
 clean:
 	rm -rf $(AWS_FOR_FLUENT_BIT_CHART_REPO)
+

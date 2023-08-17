@@ -2,7 +2,7 @@
 
 Current Release: `0`
 
-Tracking Tag: `v1.21.0`
+Tracking Tag: `1.21.0`
 
 Artifacts: https://distro.eks.amazonaws.com/golang-go1.21/releases/0/RPMS
 

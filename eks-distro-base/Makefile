@@ -608,7 +608,6 @@ standard-images: buildkit-check
 	$(call PUSHED_FILE_TRUE)
 
 # ************************************************************
-#
 
 # ****************** WINDOWS EKS-DISTRO IMAGE TARGETS *******
 $(WINDOWS_IMAGE_TARGETS): BUILDER_IMAGE=$(WINDOWS_IMAGE_REGISTRY)/$(WINDOWS_ADDON_IMAGE_NAME):$(VERSIONED_VARIANT)

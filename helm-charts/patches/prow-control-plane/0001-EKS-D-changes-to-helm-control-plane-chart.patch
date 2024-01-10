@@ -1,34 +1,34 @@
-From b192cf162dc776d2c9d40f5f9979589fc079b0a4 Mon Sep 17 00:00:00 2001
+From 87989e135510a1ccca50651a5575bac23b6f7efb Mon Sep 17 00:00:00 2001
 From: Jackson West <jgw@amazon.com>
 Date: Fri, 25 Feb 2022 12:37:01 -0600
 Subject: [PATCH] EKS-D changes to helm control plane chart
 
 Signed-off-by: Jackson West <jgw@amazon.com>
 ---
- config/prow/cluster/crier_deployment.yaml     | 118 ++++++---------
+ config/prow/cluster/crier_deployment.yaml     | 125 ++++++---------
  config/prow/cluster/crier_rbac.yaml           |  44 +-----
- config/prow/cluster/deck_deployment.yaml      | 135 +++++++-----------
+ config/prow/cluster/deck_deployment.yaml      | 142 +++++++-----------
  config/prow/cluster/deck_rbac.yaml            |  38 +----
  config/prow/cluster/deck_service.yaml         |  11 +-
  config/prow/cluster/ghproxy.yaml              |  35 +++--
- config/prow/cluster/hook_deployment.yaml      | 116 +++++----------
+ config/prow/cluster/hook_deployment.yaml      | 123 +++++----------
  config/prow/cluster/hook_rbac.yaml            |   6 +-
  config/prow/cluster/hook_service.yaml         |  12 +-
  .../prow/cluster/horologium_deployment.yaml   |  21 ++-
  config/prow/cluster/horologium_rbac.yaml      |   6 +-
- .../prow_controller_manager_deployment.yaml   | 109 ++++++--------
+ .../prow_controller_manager_deployment.yaml   | 116 ++++++--------
  .../cluster/prow_controller_manager_rbac.yaml |  31 +---
- config/prow/cluster/sinker_deployment.yaml    | 115 ++++++---------
+ config/prow/cluster/sinker_deployment.yaml    | 122 ++++++---------
  config/prow/cluster/sinker_rbac.yaml          |  29 +---
- .../cluster/statusreconciler_deployment.yaml  |  29 ++--
+ .../cluster/statusreconciler_deployment.yaml  |  87 ++++++-----
  .../prow/cluster/statusreconciler_rbac.yaml   |   7 +-
  config/prow/cluster/tide_deployment.yaml      |  38 +++--
  config/prow/cluster/tide_rbac.yaml            |   8 +-
  config/prow/cluster/tide_service.yaml         |  11 +-
- 20 files changed, 339 insertions(+), 580 deletions(-)
+ 20 files changed, 368 insertions(+), 644 deletions(-)
 
 diff --git a/config/prow/cluster/crier_deployment.yaml b/config/prow/cluster/crier_deployment.yaml
-index d53ff40e9b..ecb49e4f79 100644
+index 073066c356..8e2ebeec9b 100644
 --- a/config/prow/cluster/crier_deployment.yaml
 +++ b/config/prow/cluster/crier_deployment.yaml
 @@ -15,7 +15,6 @@
@@ -52,11 +52,11 @@ index d53ff40e9b..ecb49e4f79 100644
        labels:
          app: crier
      spec:
-@@ -33,64 +38,56 @@ spec:
+@@ -33,67 +38,56 @@ spec:
        terminationGracePeriodSeconds: 30
        containers:
        - name: crier
--        image: gcr.io/k8s-prow/crier:v20230322-fad14aa00d
+-        image: gcr.io/k8s-prow/crier:v20240103-fc5e4f9694
 +        image: {{ .Values.crier.image }}
          args:
 -        - --blob-storage-workers=1
@@ -78,7 +78,7 @@ index d53ff40e9b..ecb49e4f79 100644
          env:
 -        # Use KUBECONFIG envvar rather than --kubeconfig flag in order to provide multiple configs to merge.
 -        - name: KUBECONFIG
--          value: "/etc/kubeconfig/config:/etc/kubeconfig-build-test-infra-trusted/kubeconfig:/etc/kubeconfig-build-k8s-prow-builds/kubeconfig:/etc/kubeconfig-build-rules-k8s/kubeconfig:/etc/kubeconfig-eks-prow-build-cluster/kubeconfig"
+-          value: "/etc/kubeconfig/config:/etc/kubeconfig-build-test-infra-trusted/kubeconfig:/etc/kubeconfig-build-k8s-prow-builds/kubeconfig:/etc/kubeconfig-build-rules-k8s/kubeconfig:/etc/kubeconfig-eks-prow-build-cluster/kubeconfig:/etc/kubeconfig-k8s-infra-kops-prow-build/kubeconfig"
 -        # AWS_ variables needed to assume role to access the prow-build-cluster EKS cluster.
 -        - name: AWS_ROLE_ARN
 -          value: arn:aws:iam::468814281478:role/Prow-EKS-Admin
@@ -111,6 +111,9 @@ index d53ff40e9b..ecb49e4f79 100644
 -        - mountPath: /etc/kubeconfig-eks-prow-build-cluster
 -          name: kubeconfig-eks-prow-build-cluster
 -          readOnly: true
+-        - mountPath: /etc/kubeconfig-k8s-infra-kops-prow-build
+-          name: kubeconfig-k8s-infra-kops-prow-build
+-          readOnly: true
          - name: config
            mountPath: /etc/config
            readOnly: true
@@ -139,18 +142,18 @@ index d53ff40e9b..ecb49e4f79 100644
 +        env:
 +        - name: AWS_STS_REGIONAL_ENDPOINTS
 +          value: regional
-+        image: {{ .Values.awsIamAuthenticator.image }}
++        image: {{ .Values.amazonlinux.image }}
 +        command:
-+        - cp
-+        - /aws-iam-authenticator
-+        - /shared-bins/aws-iam-authenticator
++        - sh
++        - -c
++        - yum install -y git make cmake golang && git clone https://github.com/kubernetes-sigs/aws-iam-authenticator && cd aws-iam-authenticator && git checkout {{ .Values.awsIamAuthenticator.tag }} && make bin && cp _output/bin/aws-iam-authenticator /shared-bins/aws-iam-authenticator
 +        volumeMounts:
 +        - name: shared-bins
 +          mountPath: /shared-bins
        volumes:
        - name: config
          configMap:
-@@ -98,38 +95,15 @@ spec:
+@@ -101,42 +95,15 @@ spec:
        - name: job-config
          configMap:
            name: job-config
@@ -187,6 +190,10 @@ index d53ff40e9b..ecb49e4f79 100644
 -        secret:
 -          defaultMode: 420
 -          secretName: kubeconfig-eks-prow-build-cluster
+-      - name: kubeconfig-k8s-infra-kops-prow-build
+-        secret:
+-          defaultMode: 420
+-          secretName: kubeconfig-k8s-infra-kops-prow-build
 -      # AWS IAM token needed to assume role to access the prow-build-cluster EKS cluster.
 -      - name: aws-iam-token
 -        projected:
@@ -275,7 +282,7 @@ index 53f4471080..57393297a9 100644
 -  namespace: default
 +  namespace: {{ .Release.Namespace }}
 diff --git a/config/prow/cluster/deck_deployment.yaml b/config/prow/cluster/deck_deployment.yaml
-index 50e7cb6966..abd0103817 100644
+index 2150eee893..d629eeae21 100644
 --- a/config/prow/cluster/deck_deployment.yaml
 +++ b/config/prow/cluster/deck_deployment.yaml
 @@ -15,12 +15,11 @@
@@ -305,11 +312,11 @@ index 50e7cb6966..abd0103817 100644
        labels:
          app: deck
      spec:
-@@ -38,77 +43,52 @@ spec:
+@@ -38,80 +43,52 @@ spec:
        terminationGracePeriodSeconds: 30
        containers:
        - name: deck
--        image: gcr.io/k8s-prow/deck:v20230322-fad14aa00d
+-        image: gcr.io/k8s-prow/deck:v20240103-fc5e4f9694
 +        image: {{ .Values.deck.image }}
          imagePullPolicy: Always
          ports:
@@ -339,7 +346,7 @@ index 50e7cb6966..abd0103817 100644
          env:
 -        # Use KUBECONFIG envvar rather than --kubeconfig flag in order to provide multiple configs to merge.
 -        - name: KUBECONFIG
--          value: "/etc/kubeconfig/config:/etc/kubeconfig-build-test-infra-trusted/kubeconfig:/etc/kubeconfig-build-k8s-prow-builds/kubeconfig:/etc/kubeconfig-build-rules-k8s/kubeconfig:/etc/kubeconfig-eks-prow-build-cluster/kubeconfig"
+-          value: "/etc/kubeconfig/config:/etc/kubeconfig-build-test-infra-trusted/kubeconfig:/etc/kubeconfig-build-k8s-prow-builds/kubeconfig:/etc/kubeconfig-build-rules-k8s/kubeconfig:/etc/kubeconfig-eks-prow-build-cluster/kubeconfig::/etc/kubeconfig-k8s-infra-kops-prow-build/kubeconfig"
 -        # AWS_ variables needed to assume role to access the prow-build-cluster EKS cluster.
 -        - name: AWS_ROLE_ARN
 -          value: arn:aws:iam::468814281478:role/Prow-EKS-Admin
@@ -375,6 +382,9 @@ index 50e7cb6966..abd0103817 100644
 -        - mountPath: /etc/kubeconfig-eks-prow-build-cluster
 -          name: kubeconfig-eks-prow-build-cluster
 -          readOnly: true
+-        - mountPath: /etc/kubeconfig-k8s-infra-kops-prow-build
+-          name: kubeconfig-k8s-infra-kops-prow-build
+-          readOnly: true
          - name: config
            mountPath: /etc/config
            readOnly: true
@@ -393,16 +403,16 @@ index 50e7cb6966..abd0103817 100644
 -          mountPath: /var/run/secrets/aws-iam-token/serviceaccount
 +        - name: s3-credentials
 +          mountPath: /etc/s3-credentials
-           readOnly: true
++          readOnly: true
 +        - name: kubeconfig
 +          mountPath: /etc/kubeconfig
-+          readOnly: true
+           readOnly: true
 +        - name: shared-bins
 +          mountPath: /shared-bins
          livenessProbe:
            httpGet:
              path: /healthz
-@@ -122,36 +102,20 @@ spec:
+@@ -125,40 +102,20 @@ spec:
            initialDelaySeconds: 10
            periodSeconds: 3
            timeoutSeconds: 600
@@ -411,11 +421,11 @@ index 50e7cb6966..abd0103817 100644
 +        env:
 +        - name: AWS_STS_REGIONAL_ENDPOINTS
 +          value: regional
-+        image: {{ .Values.awsIamAuthenticator.image }}
++        image: {{ .Values.amazonlinux.image }}
 +        command:
-+        - cp
-+        - /aws-iam-authenticator
-+        - /shared-bins/aws-iam-authenticator
++        - sh
++        - -c
++        - yum install -y git make cmake golang && git clone https://github.com/kubernetes-sigs/aws-iam-authenticator && cd aws-iam-authenticator && git checkout {{ .Values.awsIamAuthenticator.tag }} && make bin && cp _output/bin/aws-iam-authenticator /shared-bins/aws-iam-authenticator
 +        volumeMounts:
 +        - name: shared-bins
 +          mountPath: /shared-bins
@@ -449,10 +459,14 @@ index 50e7cb6966..abd0103817 100644
 -        secret:
 -          defaultMode: 420
 -          secretName: kubeconfig-eks-prow-build-cluster
+-      - name: kubeconfig-k8s-infra-kops-prow-build
+-        secret:
+-          defaultMode: 420
+-          secretName: kubeconfig-k8s-infra-kops-prow-build
        - name: config
          configMap:
            name: config
-@@ -161,12 +125,15 @@ spec:
+@@ -168,12 +125,15 @@ spec:
        - name: plugins
          configMap:
            name: plugins
@@ -573,7 +587,7 @@ index e65a50ebcb..8a418f3b6c 100644
 -    protocol: TCP
 -  type: NodePort
 diff --git a/config/prow/cluster/ghproxy.yaml b/config/prow/cluster/ghproxy.yaml
-index f3a882a478..855bf5652f 100644
+index a246cca78e..855bf5652f 100644
 --- a/config/prow/cluster/ghproxy.yaml
 +++ b/config/prow/cluster/ghproxy.yaml
 @@ -15,7 +15,6 @@
@@ -628,7 +642,7 @@ index f3a882a478..855bf5652f 100644
      spec:
        containers:
        - name: ghproxy
--        image: gcr.io/k8s-prow/ghproxy:v20230322-fad14aa00d
+-        image: gcr.io/k8s-prow/ghproxy:v20240103-fc5e4f9694
 +        image: {{ .Values.ghproxy.image }}
          args:
          - --cache-dir=/cache
@@ -669,7 +683,7 @@ index f3a882a478..855bf5652f 100644
  spec:
    ports:
 diff --git a/config/prow/cluster/hook_deployment.yaml b/config/prow/cluster/hook_deployment.yaml
-index 61732fe7c8..8333694b39 100644
+index f0d82ad92a..2bac47e9a3 100644
 --- a/config/prow/cluster/hook_deployment.yaml
 +++ b/config/prow/cluster/hook_deployment.yaml
 @@ -15,12 +15,11 @@
@@ -703,7 +717,7 @@ index 61732fe7c8..8333694b39 100644
        terminationGracePeriodSeconds: 180
        containers:
        - name: hook
--        image: gcr.io/k8s-prow/hook:v20230322-fad14aa00d
+-        image: gcr.io/k8s-prow/hook:v20240103-fc5e4f9694
 +        image: {{ .Values.hook.image }}
          imagePullPolicy: Always
          args:
@@ -720,7 +734,7 @@ index 61732fe7c8..8333694b39 100644
          env:
 -        # Use KUBECONFIG envvar rather than --kubeconfig flag in order to provide multiple configs to merge.
 -        - name: KUBECONFIG
--          value: "/etc/kubeconfig/config:/etc/kubeconfig-build-test-infra-trusted/kubeconfig:/etc/kubeconfig-build-k8s-prow-builds/kubeconfig:/etc/kubeconfig-build-rules-k8s/kubeconfig:/etc/kubeconfig-eks-prow-build-cluster/kubeconfig"
+-          value: "/etc/kubeconfig/config:/etc/kubeconfig-build-test-infra-trusted/kubeconfig:/etc/kubeconfig-build-k8s-prow-builds/kubeconfig:/etc/kubeconfig-build-rules-k8s/kubeconfig:/etc/kubeconfig-eks-prow-build-cluster/kubeconfig::/etc/kubeconfig-k8s-infra-kops-prow-build/kubeconfig"
 -        # AWS_ variables needed to assume role to access the prow-build-cluster EKS cluster.
 -        - name: AWS_ROLE_ARN
 -          value: arn:aws:iam::468814281478:role/Prow-EKS-Admin
@@ -750,7 +764,7 @@ index 61732fe7c8..8333694b39 100644
            mountPath: /etc/github
            readOnly: true
          - name: config
-@@ -82,31 +81,11 @@ spec:
+@@ -82,34 +81,11 @@ spec:
          - name: plugins
            mountPath: /etc/plugins
            readOnly: true
@@ -775,6 +789,9 @@ index 61732fe7c8..8333694b39 100644
 -        - mountPath: /etc/kubeconfig-eks-prow-build-cluster
 -          name: kubeconfig-eks-prow-build-cluster
 -          readOnly: true
+-        - mountPath: /etc/kubeconfig-k8s-infra-kops-prow-build
+-          name: kubeconfig-k8s-infra-kops-prow-build
+-          readOnly: true
 -        # AWS IAM token needed to assume role to access the prow-build-cluster EKS cluster.
 -        - mountPath: /var/run/secrets/aws-iam-token/serviceaccount
 -          name: aws-iam-token
@@ -784,7 +801,7 @@ index 61732fe7c8..8333694b39 100644
          livenessProbe:
            httpGet:
              path: /healthz
-@@ -120,16 +99,26 @@ spec:
+@@ -123,16 +99,26 @@ spec:
            initialDelaySeconds: 10
            periodSeconds: 3
            timeoutSeconds: 600
@@ -793,11 +810,11 @@ index 61732fe7c8..8333694b39 100644
 +        env:
 +        - name: AWS_STS_REGIONAL_ENDPOINTS
 +          value: regional
-+        image: {{ .Values.awsIamAuthenticator.image }}
++        image: {{ .Values.amazonlinux.image }}
 +        command:
-+        - cp
-+        - /aws-iam-authenticator
-+        - /shared-bins/aws-iam-authenticator
++        - sh
++        - -c
++        - yum install -y git make cmake golang && git clone https://github.com/kubernetes-sigs/aws-iam-authenticator && cd aws-iam-authenticator && git checkout {{ .Values.awsIamAuthenticator.tag }} && make bin && cp _output/bin/aws-iam-authenticator /shared-bins/aws-iam-authenticator
 +        volumeMounts:
 +        - name: shared-bins
 +          mountPath: /shared-bins
@@ -816,7 +833,7 @@ index 61732fe7c8..8333694b39 100644
        - name: config
          configMap:
            name: config
-@@ -139,38 +128,9 @@ spec:
+@@ -142,42 +128,9 @@ spec:
        - name: plugins
          configMap:
            name: plugins
@@ -849,6 +866,10 @@ index 61732fe7c8..8333694b39 100644
 -        secret:
 -          defaultMode: 420
 -          secretName: kubeconfig-eks-prow-build-cluster
+-      - name: kubeconfig-k8s-infra-kops-prow-build
+-        secret:
+-          defaultMode: 420
+-          secretName: kubeconfig-k8s-infra-kops-prow-build
 -      # AWS IAM token needed to assume role to access the prow-build-cluster EKS cluster.
 -      - name: aws-iam-token
 -        projected:
@@ -917,7 +938,7 @@ index f83355a9a7..a636b60490 100644
 +  - port: 8888
 +  type: {{ .Values.hook.service.type }}
 diff --git a/config/prow/cluster/horologium_deployment.yaml b/config/prow/cluster/horologium_deployment.yaml
-index 62a88142a1..a15c7c30cd 100644
+index db93b5d423..a15c7c30cd 100644
 --- a/config/prow/cluster/horologium_deployment.yaml
 +++ b/config/prow/cluster/horologium_deployment.yaml
 @@ -15,7 +15,6 @@
@@ -945,7 +966,7 @@ index 62a88142a1..a15c7c30cd 100644
        terminationGracePeriodSeconds: 30
        containers:
        - name: horologium
--        image: gcr.io/k8s-prow/horologium:v20230322-fad14aa00d
+-        image: gcr.io/k8s-prow/horologium:v20240103-fc5e4f9694
 +        image: {{ .Values.horologium.image }}
          args:
          - --config-path=/etc/config/config.yaml
@@ -999,7 +1020,7 @@ index 27c3ce2228..bc61184280 100644
    name: "horologium"
 +  namespace: {{ .Release.Namespace }}
 diff --git a/config/prow/cluster/prow_controller_manager_deployment.yaml b/config/prow/cluster/prow_controller_manager_deployment.yaml
-index dad378dda5..0399c1882e 100644
+index 84b5595dd2..adfb6e1ed1 100644
 --- a/config/prow/cluster/prow_controller_manager_deployment.yaml
 +++ b/config/prow/cluster/prow_controller_manager_deployment.yaml
 @@ -15,12 +15,10 @@
@@ -1015,7 +1036,7 @@ index dad378dda5..0399c1882e 100644
    replicas: 1
    strategy:
      type: RollingUpdate
-@@ -33,58 +31,50 @@ spec:
+@@ -33,61 +31,50 @@ spec:
        app: prow-controller-manager
    template:
      metadata:
@@ -1031,7 +1052,7 @@ index dad378dda5..0399c1882e 100644
        serviceAccountName: prow-controller-manager
        containers:
        - name: prow-controller-manager
--        image: gcr.io/k8s-prow/prow-controller-manager:v20230322-fad14aa00d
+-        image: gcr.io/k8s-prow/prow-controller-manager:v20240103-fc5e4f9694
 +        image: {{ .Values.prowControllerManager.image }}
          args:
          - --config-path=/etc/config/config.yaml
@@ -1046,7 +1067,7 @@ index dad378dda5..0399c1882e 100644
          env:
 -        # Use KUBECONFIG envvar rather than --kubeconfig flag in order to provide multiple configs to merge.
 -        - name: KUBECONFIG
--          value: "/etc/kubeconfig/config:/etc/kubeconfig-build-test-infra-trusted/kubeconfig:/etc/kubeconfig-build-k8s-prow-builds/kubeconfig:/etc/kubeconfig-build-rules-k8s/kubeconfig:/etc/kubeconfig-eks-prow-build-cluster/kubeconfig"
+-          value: "/etc/kubeconfig/config:/etc/kubeconfig-build-test-infra-trusted/kubeconfig:/etc/kubeconfig-build-k8s-prow-builds/kubeconfig:/etc/kubeconfig-build-rules-k8s/kubeconfig:/etc/kubeconfig-eks-prow-build-cluster/kubeconfig::/etc/kubeconfig-k8s-infra-kops-prow-build/kubeconfig"
 -        # AWS_ variables needed to assume role to access the prow-build-cluster EKS cluster.
 -        - name: AWS_ROLE_ARN
 -          value: arn:aws:iam::468814281478:role/Prow-EKS-Admin
@@ -1079,6 +1100,9 @@ index dad378dda5..0399c1882e 100644
 -        - mountPath: /etc/kubeconfig-eks-prow-build-cluster
 -          name: kubeconfig-eks-prow-build-cluster
 -          readOnly: true
+-        - mountPath: /etc/kubeconfig-k8s-infra-kops-prow-build
+-          name: kubeconfig-k8s-infra-kops-prow-build
+-          readOnly: true
          - name: config
            mountPath: /etc/config
            readOnly: true
@@ -1090,16 +1114,16 @@ index dad378dda5..0399c1882e 100644
 -          mountPath: /var/run/secrets/aws-iam-token/serviceaccount
 +        - name: github-token
 +          mountPath: /etc/github
-           readOnly: true
++          readOnly: true
 +        - name: kubeconfig
 +          mountPath: /etc/kubeconfig
-+          readOnly: true
+           readOnly: true
 +        - name: shared-bins
 +          mountPath: /shared-bins
          livenessProbe: # Pod is killed if this fails 3 times.
            httpGet:
              path: /healthz
-@@ -97,39 +87,32 @@ spec:
+@@ -100,43 +87,32 @@ spec:
              port: 8081
            initialDelaySeconds: 10
            periodSeconds: 3
@@ -1108,11 +1132,11 @@ index dad378dda5..0399c1882e 100644
 +        env:
 +        - name: AWS_STS_REGIONAL_ENDPOINTS
 +          value: regional
-+        image: {{ .Values.awsIamAuthenticator.image }}
++        image: {{ .Values.amazonlinux.image }}
 +        command:
-+        - cp
-+        - /aws-iam-authenticator
-+        - /shared-bins/aws-iam-authenticator
++        - sh
++        - -c
++        - yum install -y git make cmake golang && git clone https://github.com/kubernetes-sigs/aws-iam-authenticator && cd aws-iam-authenticator && git checkout {{ .Values.awsIamAuthenticator.tag }} && make bin && cp _output/bin/aws-iam-authenticator /shared-bins/aws-iam-authenticator
 +        volumeMounts:
 +        - name: shared-bins
 +          mountPath: /shared-bins
@@ -1138,6 +1162,10 @@ index dad378dda5..0399c1882e 100644
 -        secret:
 -          defaultMode: 420
 -          secretName: kubeconfig-eks-prow-build-cluster
+-      - name: kubeconfig-k8s-infra-kops-prow-build
+-        secret:
+-          defaultMode: 420
+-          secretName: kubeconfig-k8s-infra-kops-prow-build
 +          secretName: github-token
        - name: config
          configMap:
@@ -1237,7 +1265,7 @@ index 63e4f5ad56..b95e6f000b 100644
 -  namespace: default
 +  namespace: {{ .Release.Namespace }}
 diff --git a/config/prow/cluster/sinker_deployment.yaml b/config/prow/cluster/sinker_deployment.yaml
-index dcda551ef1..0829914b88 100644
+index 6ba860ddbe..467ae5b95d 100644
 --- a/config/prow/cluster/sinker_deployment.yaml
 +++ b/config/prow/cluster/sinker_deployment.yaml
 @@ -1,7 +1,6 @@
@@ -1248,7 +1276,7 @@ index dcda551ef1..0829914b88 100644
    name: sinker
    labels:
      app: sinker
-@@ -12,90 +11,66 @@ spec:
+@@ -12,97 +11,66 @@ spec:
        app: sinker
    template:
      metadata:
@@ -1276,11 +1304,11 @@ index dcda551ef1..0829914b88 100644
          - --config-path=/etc/config/config.yaml
          - --job-config-path=/etc/job-config
 -        - --dry-run=false
--        image: gcr.io/k8s-prow/sinker:v20230322-fad14aa00d
+-        image: gcr.io/k8s-prow/sinker:v20240103-fc5e4f9694
 -        env:
 -        # Use KUBECONFIG envvar rather than --kubeconfig flag in order to provide multiple configs to merge.
 -        - name: KUBECONFIG
--          value: "/etc/kubeconfig/config:/etc/kubeconfig-build-test-infra-trusted/kubeconfig:/etc/kubeconfig-build-k8s-prow-builds/kubeconfig:/etc/kubeconfig-build-rules-k8s/kubeconfig:/etc/kubeconfig-eks-prow-build-cluster/kubeconfig"
+-          value: "/etc/kubeconfig/config:/etc/kubeconfig-build-test-infra-trusted/kubeconfig:/etc/kubeconfig-build-k8s-prow-builds/kubeconfig:/etc/kubeconfig-build-rules-k8s/kubeconfig:/etc/kubeconfig-eks-prow-build-cluster/kubeconfig::/etc/kubeconfig-k8s-infra-kops-prow-build/kubeconfig"
 -        # AWS_ variables needed to assume role to access the prow-build-cluster EKS cluster.
 -        - name: AWS_ROLE_ARN
 -          value: arn:aws:iam::468814281478:role/Prow-EKS-Admin
@@ -1309,6 +1337,9 @@ index dcda551ef1..0829914b88 100644
 -        - mountPath: /etc/kubeconfig-eks-prow-build-cluster
 -          name: kubeconfig-eks-prow-build-cluster
 -          readOnly: true
+-        - mountPath: /etc/kubeconfig-k8s-infra-kops-prow-build
+-          name: kubeconfig-k8s-infra-kops-prow-build
+-          readOnly: true
          - name: config
            mountPath: /etc/config
            readOnly: true
@@ -1328,11 +1359,11 @@ index dcda551ef1..0829914b88 100644
 +        env:
 +        - name: AWS_STS_REGIONAL_ENDPOINTS
 +          value: regional
-+        image: {{ .Values.awsIamAuthenticator.image }}
++        image: {{ .Values.amazonlinux.image }}
 +        command:
-+        - cp
-+        - /aws-iam-authenticator
-+        - /shared-bins/aws-iam-authenticator
++        - sh
++        - -c
++        - yum install -y git make cmake golang && git clone https://github.com/kubernetes-sigs/aws-iam-authenticator && cd aws-iam-authenticator && git checkout {{ .Values.awsIamAuthenticator.tag }} && make bin && cp _output/bin/aws-iam-authenticator /shared-bins/aws-iam-authenticator
 +        volumeMounts:
 +        - name: shared-bins
 +          mountPath: /shared-bins
@@ -1357,6 +1388,10 @@ index dcda551ef1..0829914b88 100644
 -        secret:
 -          defaultMode: 420
 -          secretName: kubeconfig-eks-prow-build-cluster
+-      - name: kubeconfig-k8s-infra-kops-prow-build
+-        secret:
+-          defaultMode: 420
+-          secretName: kubeconfig-k8s-infra-kops-prow-build
 -      - name: config
 -        configMap:
 -          name: config
@@ -1453,7 +1488,7 @@ index 70eb9b52bc..c5792a22e0 100644
 -  namespace: default
 +  namespace: {{ .Release.Namespace }}
 diff --git a/config/prow/cluster/statusreconciler_deployment.yaml b/config/prow/cluster/statusreconciler_deployment.yaml
-index 16b35ca976..6dccad51d6 100644
+index b33f6d7b27..058fd717cb 100644
 --- a/config/prow/cluster/statusreconciler_deployment.yaml
 +++ b/config/prow/cluster/statusreconciler_deployment.yaml
 @@ -15,7 +15,6 @@
@@ -1464,63 +1499,99 @@ index 16b35ca976..6dccad51d6 100644
    name: statusreconciler
    labels:
      app: statusreconciler
-@@ -33,20 +32,28 @@ spec:
+@@ -32,42 +31,56 @@ spec:
+       serviceAccountName: statusreconciler
        terminationGracePeriodSeconds: 180
        containers:
-       - name: statusreconciler
--        image: gcr.io/k8s-prow/status-reconciler:v20230322-fad14aa00d
-+        image: {{ .Values.statusreconciler.image }}
-         imagePullPolicy: Always
-         args:
+-      - name: statusreconciler
+-        image: gcr.io/k8s-prow/status-reconciler:v20240103-fc5e4f9694
+-        imagePullPolicy: Always
+-        args:
 -        - --dry-run=false
-+        - --dry-run={{ .Values.dryRun }}
-         - --continue-on-error=true
-         - --plugin-config=/etc/plugins/plugins.yaml
-         - --config-path=/etc/config/config.yaml
+-        - --continue-on-error=true
+-        - --plugin-config=/etc/plugins/plugins.yaml
+-        - --config-path=/etc/config/config.yaml
 -        - --github-token-path=/etc/github/oauth
-+        - --github-token-path=/etc/github/token
-         - --github-endpoint=http://ghproxy
-         - --github-endpoint=https://api.github.com
-         - --job-config-path=/etc/job-config
+-        - --github-endpoint=http://ghproxy
+-        - --github-endpoint=https://api.github.com
+-        - --job-config-path=/etc/job-config
 -        - --denylist=kubernetes/kubernetes
-+        - --s3-credentials-file=/etc/s3-credentials/service-account.json
-+        - --status-path=s3://{{ .Values.prow.tideStatusReconcilerBucketName }}/status-reconciler-status
-+        env:
-+        - name: AWS_STS_REGIONAL_ENDPOINTS
-+          value: regional
-+        - name: AWS_ROLE_SESSION_NAME
-+          valueFrom:
-+            fieldRef:
-+              fieldPath: metadata.name
-         volumeMounts:
+-        volumeMounts:
 -        - name: oauth
+-          mountPath: /etc/github
+-          readOnly: true
++        - name: statusreconciler
++          image: { { .Values.statusreconciler.image } }
++          imagePullPolicy: Always
++          args:
++            - --dry-run={{ .Values.dryRun }}
++            - --continue-on-error=true
++            - --plugin-config=/etc/plugins/plugins.yaml
++            - --config-path=/etc/config/config.yaml
++            - --github-token-path=/etc/github/token
++            - --github-endpoint=http://ghproxy
++            - --github-endpoint=https://api.github.com
++            - --job-config-path=/etc/job-config
++            - --s3-credentials-file=/etc/s3-credentials/service-account.json
++            - --status-path=s3://{{ .Values.prow.tideStatusReconcilerBucketName }}/status-reconciler-status
++          env:
++            - name: AWS_STS_REGIONAL_ENDPOINTS
++              value: regional
++            - name: AWS_ROLE_SESSION_NAME
++              valueFrom:
++                fieldRef:
++                  fieldPath: metadata.name
++          volumeMounts:
++            - name: github-token
++              mountPath: /etc/github
++              readOnly: true
++            - name: config
++              mountPath: /etc/config
++              readOnly: true
++            - name: job-config
++              mountPath: /etc/job-config
++              readOnly: true
++            - name: plugins
++              mountPath: /etc/plugins
++              readOnly: true
++            - name: s3-credentials
++              mountPath: /etc/s3-credentials
++              readOnly: true
++      volumes:
 +        - name: github-token
-           mountPath: /etc/github
-           readOnly: true
++          secret:
++            secretName: github-token
          - name: config
-@@ -58,10 +65,13 @@ spec:
+-          mountPath: /etc/config
+-          readOnly: true
++          configMap:
++            name: config
+         - name: job-config
+-          mountPath: /etc/job-config
+-          readOnly: true
++          configMap:
++            name: job-config
          - name: plugins
-           mountPath: /etc/plugins
-           readOnly: true
-+        - name: s3-credentials
-+          mountPath: /etc/s3-credentials
-+          readOnly: true
-       volumes:
+-          mountPath: /etc/plugins
+-          readOnly: true
+-      volumes:
 -      - name: oauth
-+      - name: github-token
-         secret:
+-        secret:
 -          secretName: oauth-token
-+          secretName: github-token
-       - name: config
-         configMap:
-           name: config
-@@ -71,3 +81,6 @@ spec:
-       - name: plugins
-         configMap:
-           name: plugins
-+      - name: s3-credentials
-+        secret:
-+          secretName: s3-credentials
+-      - name: config
+-        configMap:
+-          name: config
+-      - name: job-config
+-        configMap:
+-          name: job-config
+-      - name: plugins
+-        configMap:
+-          name: plugins
++          configMap:
++            name: plugins
++        - name: s3-credentials
++          secret:
++            secretName: s3-credentials
 diff --git a/config/prow/cluster/statusreconciler_rbac.yaml b/config/prow/cluster/statusreconciler_rbac.yaml
 index 847cfb47c1..2f0bbdedcb 100644
 --- a/config/prow/cluster/statusreconciler_rbac.yaml
@@ -1556,7 +1627,7 @@ index 847cfb47c1..2f0bbdedcb 100644
 -  name: statusreconciler
 +  name: {{ .Release.Namespace }}
 diff --git a/config/prow/cluster/tide_deployment.yaml b/config/prow/cluster/tide_deployment.yaml
-index 3b26a7e2dd..3f9d26f8f4 100644
+index 9e160ed0d9..3f9d26f8f4 100644
 --- a/config/prow/cluster/tide_deployment.yaml
 +++ b/config/prow/cluster/tide_deployment.yaml
 @@ -15,7 +15,6 @@
@@ -1583,7 +1654,7 @@ index 3b26a7e2dd..3f9d26f8f4 100644
        serviceAccountName: tide
        containers:
        - name: tide
--        image: gcr.io/k8s-prow/tide:v20230322-fad14aa00d
+-        image: gcr.io/k8s-prow/tide:v20240103-fc5e4f9694
 +        image: {{ .Values.tide.image }}
          args:
 -        - --dry-run=false
@@ -1701,5 +1772,5 @@ index 00ba9ae5c0..1195cb16c4 100644
 -    protocol: TCP
 -  type: ClusterIP
 -- 
-2.38.5
+2.43.0
 

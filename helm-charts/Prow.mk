@@ -1,5 +1,5 @@
 # prow-control-plane chart handling
-PROW_GIT_TAG=76cde35b3daed08dadee9360165a220952f4e49c
+PROW_GIT_TAG=724ea5f0dcb2d0fe13fb870ae6ad5e4aff475115
 PROW_UPSTREAM_REPO=test-infra
 PROW_CLONE_URL=https://github.com/kubernetes/$(PROW_UPSTREAM_REPO).git
 
@@ -20,7 +20,7 @@ $(GIT_CHECKOUT_TARGET): | $(PROW_UPSTREAM_REPO)
 $(GIT_PATCH_TARGET): $(GIT_CHECKOUT_TARGET)
 	git -C $(PROW_UPSTREAM_REPO) config user.email prow@amazonaws.com
 	git -C $(PROW_UPSTREAM_REPO) config user.name "Prow Bot"
-	git -C $(PROW_UPSTREAM_REPO) am --committer-date-is-author-date $(PATCHES_DIR)/*
+	git -C $(PROW_UPSTREAM_REPO) am -3 --committer-date-is-author-date $(PATCHES_DIR)/*
 	@touch $@
 
 # Copy only template files we care about from upstream into place

@@ -1,5 +1,6 @@
 GIT_VERSION?=v0.0.0-dev
 
+
 AWS_ACCOUNT_ID?=$(shell aws sts get-caller-identity --query Account --output text)
 
 BASE_DIRECTORY:=$(shell git rev-parse --show-toplevel)
